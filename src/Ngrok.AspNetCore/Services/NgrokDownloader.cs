@@ -32,13 +32,13 @@ namespace Ngrok.AspNetCore.Services
 		/// <returns></returns>
 		public async Task DownloadExecutableAsync(CancellationToken cancellationToken)
 		{
-			var ngrokPath = $"{Path.Combine(Directory.GetCurrentDirectory(), "ngrok.exe")}";
+			var ngrokPath = $"{Path.Combine(AppContext.BaseDirectory, "ngrok.exe")}";
 			if (File.Exists(ngrokPath))
 				return;
 
 			var downloadUrl = GetDownloadPath();
 			var fileName = $"{RuntimeExtensions.GetOsArchitectureString()}.zip";
-			var filePath = $"{Path.Combine(Directory.GetCurrentDirectory(), fileName)}";
+			var filePath = $"{Path.Combine(AppContext.BaseDirectory, fileName)}";
 
 			var downloadResponse = await _httpClient.GetAsync(downloadUrl, cancellationToken);
 			downloadResponse.EnsureSuccessStatusCode();
@@ -51,7 +51,7 @@ namespace Ngrok.AspNetCore.Services
 			}
 
 			// Extract zip
-			ZipFile.ExtractToDirectory(filePath, Directory.GetCurrentDirectory());
+			ZipFile.ExtractToDirectory(filePath, AppContext.BaseDirectory);
 
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 				GrantNgrokFileExecutablePermissions();
@@ -68,7 +68,7 @@ namespace Ngrok.AspNetCore.Services
 					CreateNoWindow = true,
 					WindowStyle = ProcessWindowStyle.Hidden,
 					FileName = "/bin/bash",
-					Arguments = $"-c \"chmod +x {Directory.GetCurrentDirectory()}/ngrok\""
+					Arguments = $"-c \"chmod +x {AppContext.BaseDirectory}/ngrok\""
 				}
 			};
 

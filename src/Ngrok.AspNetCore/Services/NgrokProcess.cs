@@ -36,7 +36,7 @@ namespace Ngrok.AspNetCore.Services
 
 		public void StartNgrokProcess()
 		{
-			var linuxProcessStartInfo = new ProcessStartInfo("/bin/bash", "-c \"" + Directory.GetCurrentDirectory() + "/ngrok start --none --log=stdout\"")
+			var linuxProcessStartInfo = new ProcessStartInfo("/bin/bash", "-c \"" + AppContext.BaseDirectory + "/ngrok start --none --log=stdout\"")
 			{
 				CreateNoWindow = true,
 				WindowStyle = ProcessWindowStyle.Hidden,
