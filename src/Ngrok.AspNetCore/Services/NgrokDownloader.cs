@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Options;
 using Ngrok.AspNetCore.Exceptions;
 using Ngrok.AspNetCore.Internal;
 
@@ -17,10 +18,14 @@ namespace Ngrok.AspNetCore.Services
 {
 	public class NgrokDownloader
 	{
+		private readonly NgrokOptions _options;
 		private readonly HttpClient _httpClient;
 
-		public NgrokDownloader(HttpClient httpClient)
+		public NgrokDownloader(
+			IOptionsMonitor<NgrokOptions> optionsAccessor,
+			HttpClient httpClient)
 		{
+			_options = optionsAccessor.CurrentValue;
 			_httpClient = httpClient;
 		}
 
@@ -83,10 +88,7 @@ namespace Ngrok.AspNetCore.Services
 		/// <returns></returns>
 		private string GetDownloadPath()
 		{
-			const string cdn = "https://bin.equinox.io";
-			const string cdnPath = "c/4VmDzA7iaHb/Ngrok-stable";
-
-			return $"{cdn}/{cdnPath}-{RuntimeExtensions.GetOsArchitectureString()}.zip";
+			return $"{_options.CdnDownloadPath}-{RuntimeExtensions.GetOsArchitectureString()}.zip";
 		}
 	}
 }
