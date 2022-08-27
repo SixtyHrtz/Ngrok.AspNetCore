@@ -65,8 +65,8 @@ namespace Ngrok.AspNetCore.Services
 
 		protected virtual void Start(ProcessStartInfo pi)
 		{
-			// TODO - make optional
-			//KillExistingNgrokProcesses();
+			KillExistingNgrokProcesses();
+			
 			var process = new Process();
 			process.StartInfo = pi;
 
@@ -85,7 +85,7 @@ namespace Ngrok.AspNetCore.Services
 				return;
 
 			_process.Kill();
-			//KillExistingNgrokProcesses();
+			KillExistingNgrokProcesses();
 		}
 
 		// TODO - make optional
