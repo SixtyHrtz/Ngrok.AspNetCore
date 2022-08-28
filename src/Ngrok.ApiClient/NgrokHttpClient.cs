@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -38,8 +39,13 @@ namespace Ngrok.ApiClient
 
 		public async Task<Tunnel> StartTunnelAsync(StartTunnelRequest request, CancellationToken cancellationToken = default)
 		{
+			var jsonOptions = new JsonSerializerOptions()
+			{
+				DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+			};
+
 			HttpResponseMessage response;
-			using (var content = new StringContent(JsonSerializer.Serialize(request), System.Text.Encoding.UTF8, "application/json"))
+			using (var content = new StringContent(JsonSerializer.Serialize(request, jsonOptions), System.Text.Encoding.UTF8, "application/json"))
 			{
 				response = await Client.PostAsync(StartTunnelPath, content, cancellationToken);
 			}
