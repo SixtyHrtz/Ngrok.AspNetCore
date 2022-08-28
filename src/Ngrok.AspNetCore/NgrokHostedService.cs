@@ -1,17 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Ngrok.AspNetCore.Services;
-using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.Extensions.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Ngrok.ApiClient;
-using Tunnel = Ngrok.ApiClient.Tunnel;
+﻿using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Ngrok.ApiClient;
+using Ngrok.AspNetCore.Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Tunnel = Ngrok.ApiClient.Tunnel;
 
 namespace Ngrok.AspNetCore
 {
@@ -22,11 +19,9 @@ namespace Ngrok.AspNetCore
 		private readonly NgrokProcessMgr _processMgr;
 		private readonly INgrokApiClient _client;
 		private readonly IServer _server;
-		private readonly IApplicationLifetime _applicationLifetime;
 		private readonly ILogger<NgrokHostedService> _logger;
 
 		private readonly TaskCompletionSource<IReadOnlyCollection<Tunnel>> _tunnelTaskSource;
-		private readonly TaskCompletionSource<IReadOnlyCollection<string>> _serverAddressesSource;
 		private readonly TaskCompletionSource<bool> _shutdownSource;
 		private IEnumerable<Tunnel> _tunnels;
 
@@ -47,7 +42,6 @@ namespace Ngrok.AspNetCore
 			ILogger<NgrokHostedService> logger,
 			NgrokDownloader nGrokDownloader,
 			IServer server,
-			IApplicationLifetime applicationLifetime,
 			NgrokProcessMgr processMgr,
 			INgrokApiClient client)
 		{
@@ -55,12 +49,10 @@ namespace Ngrok.AspNetCore
 			_options = optionsMonitor.CurrentValue;
 			_nGrokDownloader = nGrokDownloader;
 			_server = server;
-			_applicationLifetime = applicationLifetime;
 			_processMgr = processMgr;
 			_client = client;
 
 			_tunnelTaskSource = new TaskCompletionSource<IReadOnlyCollection<Tunnel>>();
-			_serverAddressesSource = new TaskCompletionSource<IReadOnlyCollection<string>>();
 			_shutdownSource = new TaskCompletionSource<bool>();
 			_cancellationTokenSource = new CancellationTokenSource();
 		}
@@ -68,7 +60,8 @@ namespace Ngrok.AspNetCore
 		public async Task StartAsync(CancellationToken cancellationToken)
 		{
 			cancellationToken.Register(() => _cancellationTokenSource.Cancel());
-			_applicationLifetime.ApplicationStarted.Register(() => OnApplicationStarted());
+
+			await RunAsync(_cancellationTokenSource.Token);
 		}
 
 		public async Task StopAsync(CancellationToken cancellationToken)
@@ -89,15 +82,6 @@ namespace Ngrok.AspNetCore
 			await _shutdownSource.Task;
 		}
 
-		public Task OnApplicationStarted()
-		{
-			var addresses = _server.Features.Get<IServerAddressesFeature>().Addresses.ToArray();
-			_logger.LogDebug("Inferred hosting URLs as {ServerAddresses}.", addresses);
-			_serverAddressesSource.SetResult(addresses.ToArray());
-			return RunAsync(_cancellationTokenSource.Token);
-		}
-
-
 		private async Task RunAsync(CancellationToken cancellationToken = default)
 		{
 			try
@@ -115,13 +99,24 @@ namespace Ngrok.AspNetCore
 				if (_cancellationTokenSource.IsCancellationRequested)
 					return;
 
-				var url = await AdjustApplicationHttpUrlIfNeededAsync();
+				var url = _options.ApplicationHttpUrl;
+
+				if (string.IsNullOrWhiteSpace(url))
+					throw new InvalidOperationException("No application URL has been set.");
+
 				_logger.LogInformation("Picked hosting URL {Url}.", url);
 
 				if (_cancellationTokenSource.IsCancellationRequested)
 					return;
 
-				var tunnels = await StartTunnelsAsync(url, cancellationToken);
+				var tunnels = await GetTunnelsListAsync(cancellationToken);
+
+				if (_cancellationTokenSource.IsCancellationRequested)
+					return;
+
+				if (tunnels == null || tunnels.Length == 0)
+					tunnels = await StartTunnelsAsync(url, cancellationToken);
+
 				_logger.LogInformation("Tunnels {Tunnels} have been started.", new object[] { tunnels });
 
 				if (_cancellationTokenSource.IsCancellationRequested)
@@ -139,7 +134,6 @@ namespace Ngrok.AspNetCore
 			{
 				_shutdownSource.SetResult(true);
 			}
-			
 		}
 
 		private void OnTunnelsFetched(IEnumerable<Tunnel> tunnels)
@@ -186,17 +180,21 @@ namespace Ngrok.AspNetCore
 			{
 				Name = System.AppDomain.CurrentDomain.FriendlyName,
 				Address = address,
-				Protocol = "http",
-				HostHeader = address
+				Protocol = "http"
 			}, cancellationToken);
 
 			// Get Tunnels
-			var tunnels = (await _client.ListTunnelsAsync(cancellationToken))
-				.Where(t => t.Name == System.AppDomain.CurrentDomain.FriendlyName ||
-				t.Name == $"{System.AppDomain.CurrentDomain.FriendlyName} (http)")
-				?.ToArray();
+			var tunnels = await GetTunnelsListAsync(cancellationToken);
 
 			return tunnels;
+		}
+
+		private async Task<Tunnel[]?> GetTunnelsListAsync(CancellationToken cancellationToken)
+		{
+			return (await _client.ListTunnelsAsync(cancellationToken))
+				.Where(t => t.Name == System.AppDomain.CurrentDomain.FriendlyName ||
+					t.Name == $"{System.AppDomain.CurrentDomain.FriendlyName} (http)")
+				?.ToArray();
 		}
 
 		private async Task<T> WaitForTaskWithTimeout<T>(Task<T> task, int timeoutInMilliseconds, string timeoutMessage)
@@ -205,32 +203,6 @@ namespace Ngrok.AspNetCore
 				return await task;
 
 			throw new InvalidOperationException(timeoutMessage);
-		}
-
-		private async Task<string> AdjustApplicationHttpUrlIfNeededAsync()
-		{
-			var url = _options.ApplicationHttpUrl;
-
-			// TODO review if this is needed. Can this even be hit anymore?
-			if (string.IsNullOrWhiteSpace(url))
-			{
-				var addresses = await WaitForTaskWithTimeout(
-					_serverAddressesSource.Task,
-					30000,
-					$"No {nameof(NgrokOptions.ApplicationHttpUrl)} was set in the settings, and the URL of the server could not be inferred within 30 seconds.");
-				if (addresses != null)
-				{
-					url = addresses.FirstOrDefault(a => a.StartsWith("http://")) ?? addresses.FirstOrDefault();
-					url = url?.Replace("*", "localhost", StringComparison.InvariantCulture);
-				}
-			}
-
-			_options.ApplicationHttpUrl = url;
-
-			if (url == null)
-				throw new InvalidOperationException("No application URL has been set, and it could not be inferred.");
-
-			return url;
 		}
 	}
 }
