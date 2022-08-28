@@ -59,7 +59,7 @@ namespace Ngrok.AspNetCore
 		public string? NgrokConfigProfile { get; set; } = null;
 
 		/// <summary>
-		/// Path to download Ngrok via CDN equinox.io. The path must end with "/Ngrok-stable".
+		/// Path to download Ngrok via CDN equinox.io. The path must end with "stable".
 		/// </summary>
 		public string? CdnDownloadPath { get; set; } = null;
 	}
